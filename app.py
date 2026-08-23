@@ -36,8 +36,8 @@ from japan_voice.ui.views import render_minkara, render_overview, render_raw, re
 st.set_page_config(page_title="KIA Japan Market Dashboard", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(CSS, unsafe_allow_html=True)
 SETTINGS = load_settings(load_dotenv_file=True)
-ANALYSIS_RESULT_VERSION = 3
-VIDEO_ANALYZER_RESULT_VERSION = 2
+ANALYSIS_RESULT_VERSION = 4
+VIDEO_ANALYZER_RESULT_VERSION = 3
 
 # Streamlit preserves session_state across source hot-reloads. Do not keep an
 # unavailable aggregate produced by an older response contract.
@@ -149,7 +149,7 @@ if submitted:
                 st.write("Analyzing consumer voice and generating insights...")
                 source_map = {"YouTube": Source.YOUTUBE.value, "Yahoo Japan": Source.YAHOO_JAPAN.value, "みんカラ": Source.MINKARA.value}
                 source_values = tuple(source_map[label] for label in selected_labels)
-                run, analysis = execute_run(keyword, start, end, min(SETTINGS.youtube_max_videos, 20), source_values)
+                run, analysis = execute_run(keyword, start, end, SETTINGS.youtube_max_videos, source_values)
                 st.session_state.last_successful_run = run
                 st.session_state.analysis_result = analysis
                 st.session_state.analysis_result_version = ANALYSIS_RESULT_VERSION

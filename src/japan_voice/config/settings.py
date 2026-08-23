@@ -56,9 +56,9 @@ def _float(name: str, default: float) -> float:
 @dataclass(frozen=True)
 class Settings:
     gemini_model: str = "gemini-2.5-flash"
-    youtube_max_videos: int = 10
+    youtube_max_videos: int = 100
     youtube_comments_per_video: int = 50
-    youtube_max_search_windows: int = 12
+    youtube_max_search_windows: int = 36
     youtube_comment_safety_limit: int = 1000
     youtube_comment_max_pages: int = 20
     youtube_analyzer_comment_limit: int = 500
@@ -144,9 +144,9 @@ def load_settings(*, load_dotenv_file: bool = True) -> Settings:
 
     return Settings(
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-        youtube_max_videos=_integer("YOUTUBE_MAX_VIDEOS", 10),
+        youtube_max_videos=_integer("YOUTUBE_MAX_VIDEOS", 100),
         youtube_comments_per_video=_integer("YOUTUBE_COMMENTS_PER_VIDEO", 50),
-        youtube_max_search_windows=_integer("YOUTUBE_MAX_SEARCH_WINDOWS", 12),
+        youtube_max_search_windows=_integer("YOUTUBE_MAX_SEARCH_WINDOWS", 36),
         youtube_comment_safety_limit=_integer("YOUTUBE_COMMENT_SAFETY_LIMIT", 1000),
         youtube_comment_max_pages=_integer("YOUTUBE_COMMENT_MAX_PAGES", 20),
         youtube_analyzer_comment_limit=_integer("YOUTUBE_ANALYZER_COMMENT_LIMIT", 500),

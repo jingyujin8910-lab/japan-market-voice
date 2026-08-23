@@ -119,9 +119,26 @@ class StructuredAnalysisService:
 
     @classmethod
     def apply_majority_consistency(cls, aggregate: AggregateAnalysis) -> AggregateAnalysis:
-        """Drop a positive minority when concerns/barriers have stronger evidence."""
-        opposing: Dict[str, set[str]] = defaultdict(set)
+        """Merge purchase barriers into concerns and reconcile opposing evidence."""
+        concerns: List[EvidenceFinding] = []
+        concern_indexes: Dict[str, int] = {}
         for finding in aggregate.negative_drivers + aggregate.purchase_barriers:
+            concept = cls._finding_concept(finding.text)
+            if concept in concern_indexes:
+                index = concern_indexes[concept]
+                existing = concerns[index]
+                evidence_ids = list(dict.fromkeys(
+                    existing.evidence_record_ids + finding.evidence_record_ids
+                ))[:20]
+                concerns[index] = existing.model_copy(
+                    update={"evidence_record_ids": evidence_ids}
+                )
+                continue
+            concern_indexes[concept] = len(concerns)
+            concerns.append(finding)
+
+        opposing: Dict[str, set[str]] = defaultdict(set)
+        for finding in concerns:
             opposing[cls._finding_concept(finding.text)].update(finding.evidence_record_ids)
         positives = []
         for finding in aggregate.positive_drivers:
@@ -129,7 +146,12 @@ class StructuredAnalysisService:
             if len(opposing[cls._finding_concept(finding.text)]) > positive_count:
                 continue
             positives.append(finding)
-        return aggregate.model_copy(update={"positive_drivers": positives})
+        return aggregate.model_copy(update={
+            "positive_drivers": positives,
+            "negative_drivers": concerns[:10],
+            "purchase_barriers": [],
+            "emerging_issues": [],
+        })
 
     @staticmethod
     def _usable_aggregate(aggregate: AggregateAnalysis) -> bool:
@@ -137,9 +159,7 @@ class StructuredAnalysisService:
             aggregate.overall_voice,
             aggregate.positive_drivers,
             aggregate.negative_drivers,
-            aggregate.purchase_barriers,
             aggregate.marketing_insights,
-            aggregate.emerging_issues,
         ))
 
     @classmethod
@@ -198,7 +218,11 @@ class StructuredAnalysisService:
             ((value, item.record_id) for item in consumer for value in item.topics), 10
         )
         positives = cls._ranked((value, item.record_id) for item in consumer for value in item.positive_drivers)
-        negatives = cls._ranked((value, item.record_id) for item in consumer for value in item.negative_drivers)
+        negatives = cls._ranked(
+            (value, item.record_id)
+            for item in consumer
+            for value in item.negative_drivers + item.purchase_barriers
+        )
         barriers = cls._ranked((value, item.record_id) for item in consumer for value in item.purchase_barriers)
         questions = cls._ranked((value, item.record_id) for item in consumer for value in item.customer_questions)
         signals = cls._ranked((value, item.record_id) for item in consumer for value in item.purchase_signals)
@@ -243,13 +267,7 @@ class StructuredAnalysisService:
                 "반복적으로 확인된 질문: {term}."),
             purchase_signals=findings(signals, "명확한 구매 신호를 식별하기에 데이터가 부족합니다.",
                 "구매 관심 신호로 {term} 관련 반응이 확인됩니다."),
-            purchase_barriers=findings(barriers, "명확한 구매 장벽을 식별하기에 데이터가 부족합니다.",
-                "구매 장벽: {term}."),
             marketing_insights=marketing,
-            emerging_issues=[EvidenceFinding(
-                text="현재 데이터에서는 신뢰할 수 있는 신규 이슈가 확인되지 않습니다.",
-                evidence_record_ids=[],
-            )],
         )
         aggregate = cls.apply_majority_consistency(aggregate)
         return aggregate, (

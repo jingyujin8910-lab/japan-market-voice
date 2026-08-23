@@ -10,8 +10,8 @@ CSS = """
 .brand-shell { display:grid; grid-template-columns:155px minmax(420px,1fr) 330px; align-items:center;
   min-height:104px; padding:20px 26px; overflow:visible; background:linear-gradient(105deg,#071a2b,#0c2940);
   border-radius:22px; box-shadow:0 16px 38px rgba(7,26,43,.16); margin:4px 0 18px; }
-.brand-shell > div:first-child { width:132px; height:64px; overflow:hidden; display:flex; align-items:center; }
-.brand-logo { width:132px; height:auto; display:block; filter:invert(1); mix-blend-mode:screen; transform:scale(1.12); }
+.brand-shell > div:first-child { width:132px; height:70px; display:flex; align-items:center; }
+.brand-logo { width:132px; height:auto; display:block; object-fit:contain; }
 .brand-title { color:#fff; font-size:31px; line-height:1.18; font-weight:780; letter-spacing:-.8px; }
 .brand-subtitle { color:#a9bfd0; font-size:13px; margin-top:7px; }
 .status-grid { display:grid; grid-template-columns:110px 1fr; gap:5px 12px; font-size:12px; line-height:1.45; }

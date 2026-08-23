@@ -138,13 +138,11 @@ def render_intelligence(analysis: Optional[AnalysisResult]) -> None:
         st.caption("Aggregated from analyzed consumer records")
     overall = " ".join(item.text for item in agg.overall_voice) or "현재 수집된 데이터만으로 전체 반응을 판단하기 어려움"
     st.markdown(f'<div class="overall-card"><h4>Overall Voice</h4><p>{escape(overall)}</p></div>', unsafe_allow_html=True)
-    cols = st.columns(3)
-    cards = [("Positive Drivers", agg.positive_drivers, "intel-positive"), ("Key Concerns", agg.negative_drivers, "intel-negative"), ("Purchase Barriers", agg.purchase_barriers, "intel-barrier")]
+    cols = st.columns(2)
+    cards = [("Positive Drivers", agg.positive_drivers, "intel-positive"), ("Key Concerns", agg.negative_drivers, "intel-negative")]
     for col, (title, items, css_class) in zip(cols, cards):
         with col: st.markdown(f'<div class="intel-card {css_class}"><h4>{title}</h4>{_finding_list(items)}</div>', unsafe_allow_html=True)
-    cols = st.columns([2, 3])
-    with cols[0]: st.markdown(f'<div class="intel-card"><h4>Emerging Issues</h4>{_finding_list(agg.emerging_issues, "신뢰할 수 있는 Emerging Issue를 식별하기에 데이터가 부족합니다.")}</div>', unsafe_allow_html=True)
-    with cols[1]: st.markdown(f'<div class="marketing-card"><h4>Marketing Implications</h4>{_finding_list(agg.marketing_insights)}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="marketing-card"><h4>Marketing Implications</h4>{_finding_list(agg.marketing_insights)}</div>', unsafe_allow_html=True)
     if agg.representative_voc:
         section("Representative Consumer Voice", "실제 수집 Record를 근거로 검증된 한국어 요약입니다.")
         for voc in agg.representative_voc:
@@ -253,8 +251,8 @@ def render_video_analyzer_result(run: RunResult, analysis: Optional[AnalysisResu
         section("AI Comment Insight", "선택한 영상의 실제 공개 댓글을 근거로 작성했습니다.")
         overall = " ".join(item.text for item in agg.overall_voice)
         st.markdown(f'<div class="overall-card"><h4>Overall Reaction</h4><p>{escape(overall)}</p></div>', unsafe_allow_html=True)
-        cols = st.columns(3)
-        for col, (title, items, css) in zip(cols, [("Positive Drivers",agg.positive_drivers,"intel-positive"),("Key Concerns",agg.negative_drivers,"intel-negative"),("Purchase Barriers",agg.purchase_barriers,"intel-barrier")]):
+        cols = st.columns(2)
+        for col, (title, items, css) in zip(cols, [("Positive Drivers",agg.positive_drivers,"intel-positive"),("Key Concerns",agg.negative_drivers,"intel-negative")]):
             with col: st.markdown(f'<div class="intel-card {css}"><h4>{title}</h4>{_finding_list(items)}</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="marketing-card"><h4>Marketing Implications</h4>{_finding_list(agg.marketing_insights)}</div>', unsafe_allow_html=True)
         if agg.representative_voc:

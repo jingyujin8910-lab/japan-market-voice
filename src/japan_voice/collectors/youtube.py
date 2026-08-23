@@ -96,9 +96,9 @@ class YouTubeCollector:
                 error = ExternalServiceError(ErrorType.NO_DATA, "No YouTube videos found")
                 return self._failed(run_id, started, error, api_calls=api_calls)
 
-            api_calls += 1
-            metadata_api_calls += 1
-            videos = self._video_records(request, video_ids)
+            videos, video_calls = self._video_records(request, video_ids)
+            api_calls += video_calls
+            metadata_api_calls += video_calls
             records: List[ContentRecord] = list(videos)
             video_audit: Dict[str, Dict[str, Any]] = {
                 video.id: {
@@ -234,29 +234,38 @@ class YouTubeCollector:
         base_quota, remainder = divmod(max_videos, max(1, len(searches)))
         for search_index, (query, (start_utc, end_utc)) in enumerate(searches):
             window_quota = max(1, base_quota + (1 if search_index < remainder else 0))
-            calls += 1
             try:
-                payload = self._http.get_json(
-                    f"{YOUTUBE_API_BASE}/search",
-                    params={
+                page_token: Optional[str] = None
+                collected_for_search = 0
+                while collected_for_search < window_quota and len(video_ids) < max_videos:
+                    params: Dict[str, Any] = {
                         "key": self._api_key,
                         "part": "snippet",
                         "type": "video",
                         "q": query,
                         "relevanceLanguage": "ja",
                         "regionCode": "JP",
+                        "order": "date",
                         "publishedAfter": start_utc.isoformat().replace("+00:00", "Z"),
                         "publishedBefore": end_utc.isoformat().replace("+00:00", "Z"),
-                        "maxResults": min(50, window_quota if multi_window else max_videos - len(video_ids)),
-                    },
-                )
-                for item in _items(payload, "search"):
-                    video_id = item.get("id", {}).get("videoId")
-                    if isinstance(video_id, str) and video_id and video_id not in seen:
-                        seen.add(video_id)
-                        video_ids.append(video_id)
-                        if len(video_ids) >= max_videos:
-                            break
+                        "maxResults": min(50, window_quota - collected_for_search),
+                    }
+                    if page_token:
+                        params["pageToken"] = page_token
+                    payload = self._http.get_json(f"{YOUTUBE_API_BASE}/search", params=params)
+                    calls += 1
+                    page_items = _items(payload, "search")
+                    collected_for_search += len(page_items)
+                    for item in page_items:
+                        video_id = item.get("id", {}).get("videoId")
+                        if isinstance(video_id, str) and video_id and video_id not in seen:
+                            seen.add(video_id)
+                            video_ids.append(video_id)
+                            if len(video_ids) >= max_videos:
+                                break
+                    page_token = payload.get("nextPageToken")
+                    if not page_token or not page_items:
+                        break
             except ExternalServiceError as error:
                 errors.append(error)
                 if error.code in {
@@ -294,48 +303,40 @@ class YouTubeCollector:
 
     def _video_records(
         self, request: SearchRequest, video_ids: Sequence[str]
-    ) -> List[ContentRecord]:
-        payload = self._http.get_json(
-            f"{YOUTUBE_API_BASE}/videos",
-            params={
-                "key": self._api_key,
-                "part": "snippet,statistics",
-                "id": ",".join(video_ids),
-                "maxResults": min(50, len(video_ids)),
-            },
-        )
+    ) -> Tuple[List[ContentRecord], int]:
         records: List[ContentRecord] = []
-        for item in _items(payload, "videos"):
-            video_id = item.get("id")
-            snippet = item.get("snippet")
-            if not isinstance(video_id, str) or not isinstance(snippet, dict):
-                raise ExternalServiceError(ErrorType.MALFORMED_RESPONSE, "YouTube video item is malformed")
-            record = ContentRecord(
-                id=f"youtube:video:{video_id}",
-                source=self.source,
-                provider="YouTube",
-                native_id=video_id,
-                content_type=ContentType.VIDEO,
-                content_group=ContentGroup.MARKET_CONTENT,
-                keyword=request.keyword,
-                title=str(snippet.get("title") or ""),
-                content=str(snippet.get("description") or ""),
-                author=str(snippet.get("channelTitle")) if snippet.get("channelTitle") else None,
-                published_at=_parse_datetime(snippet.get("publishedAt")),
-                url=f"https://www.youtube.com/watch?v={video_id}",
-                raw_metadata={
-                    "channel_id": snippet.get("channelId"),
-                    "displayed_comment_count": self._displayed_comment_count(item),
+        calls = 0
+        for offset in range(0, len(video_ids), 50):
+            batch_ids = video_ids[offset:offset + 50]
+            payload = self._http.get_json(
+                f"{YOUTUBE_API_BASE}/videos",
+                params={
+                    "key": self._api_key,
+                    "part": "snippet,statistics",
+                    "id": ",".join(batch_ids),
+                    "maxResults": len(batch_ids),
                 },
             )
-            records.append(
-                evaluate_record(
-                    record,
-                    start_date=request.start_date,
-                    end_date=request.end_date,
-                ).record
-            )
-        return records
+            calls += 1
+            for item in _items(payload, "videos"):
+                video_id = item.get("id")
+                snippet = item.get("snippet")
+                if not isinstance(video_id, str) or not isinstance(snippet, dict):
+                    raise ExternalServiceError(ErrorType.MALFORMED_RESPONSE, "YouTube video item is malformed")
+                record = ContentRecord(
+                    id=f"youtube:video:{video_id}", source=self.source, provider="YouTube",
+                    native_id=video_id, content_type=ContentType.VIDEO,
+                    content_group=ContentGroup.MARKET_CONTENT, keyword=request.keyword,
+                    title=str(snippet.get("title") or ""), content=str(snippet.get("description") or ""),
+                    author=str(snippet.get("channelTitle")) if snippet.get("channelTitle") else None,
+                    published_at=_parse_datetime(snippet.get("publishedAt")),
+                    url=f"https://www.youtube.com/watch?v={video_id}",
+                    raw_metadata={"channel_id": snippet.get("channelId"),
+                        "displayed_comment_count": self._displayed_comment_count(item)},
+                )
+                records.append(evaluate_record(record, start_date=request.start_date,
+                    end_date=request.end_date).record)
+        return records, calls
 
     @staticmethod
     def _displayed_comment_count(item: Mapping[str, Any]) -> Optional[int]:

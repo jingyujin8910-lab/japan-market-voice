@@ -175,7 +175,8 @@ def test_mock_structured_analysis_covers_required_outputs() -> None:
     assert result.aggregate.negative_drivers
     assert result.aggregate.customer_questions
     assert result.aggregate.purchase_signals
-    assert result.aggregate.purchase_barriers
+    assert result.aggregate.purchase_barriers == []
+    assert any("가격" in item.text for item in result.aggregate.negative_drivers)
     assert result.aggregate.representative_voc[0].record_id == "positive"
     assert result.aggregate.marketing_insights
     assert client.analyze_calls == 2
@@ -269,9 +270,9 @@ def test_empty_gemini_aggregate_uses_deterministic_fallback() -> None:
     assert result.aggregate.overall_voice
     assert result.aggregate.positive_drivers
     assert result.aggregate.negative_drivers
-    assert result.aggregate.purchase_barriers
+    assert result.aggregate.purchase_barriers == []
     assert result.aggregate.marketing_insights
-    assert result.aggregate.emerging_issues
+    assert result.aggregate.emerging_issues == []
 
 
 def test_sparse_record_analysis_uses_minimum_safe_summary() -> None:
@@ -290,8 +291,9 @@ def test_sparse_record_analysis_uses_minimum_safe_summary() -> None:
     assert result.aggregate_status is AggregateStatus.MINIMUM_FALLBACK
     assert "총 2개의 Consumer Voice" in result.aggregate.overall_voice[0].text
     assert all((result.aggregate.positive_drivers, result.aggregate.negative_drivers,
-        result.aggregate.purchase_barriers, result.aggregate.marketing_insights,
-        result.aggregate.emerging_issues))
+        result.aggregate.marketing_insights))
+    assert result.aggregate.purchase_barriers == []
+    assert result.aggregate.emerging_issues == []
 
 
 def test_japanese_gemini_aggregate_is_replaced_by_korean_fallback() -> None:
@@ -344,4 +346,5 @@ def test_majority_consistency_removes_positive_minority_for_same_concept() -> No
     reconciled = StructuredAnalysisService.apply_majority_consistency(aggregate)
     assert reconciled.positive_drivers == []
     assert len(reconciled.negative_drivers) == 1
-    assert len(reconciled.purchase_barriers) == 1
+    assert reconciled.negative_drivers[0].evidence_record_ids == ["n1", "n2"]
+    assert reconciled.purchase_barriers == []

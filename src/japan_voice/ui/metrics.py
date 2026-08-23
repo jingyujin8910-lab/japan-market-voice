@@ -16,12 +16,20 @@ TOPIC_ALIASES = {
     "充電": "충전 인프라", "充電インフラ": "충전 인프라", "充電設備": "충전 인프라",
     "航続距離": "주행거리", "주행 거리": "주행거리", "車中泊": "차박 활용성",
     "차박": "차박 활용성", "価格": "가격", "車両価格": "가격",
+    "design": "디자인", "デザイン": "디자인", "price": "가격",
+    "charging": "충전 인프라", "charging infrastructure": "충전 인프라",
+    "range": "주행거리", "driving range": "주행거리", "battery": "배터리",
+    "バッテリー": "배터리", "safety": "안전성", "安全性": "안전성",
+    "reliability": "신뢰성", "信頼性": "신뢰성", "quality": "품질",
+    "品質": "품질", "interior space": "실내 공간", "室内空間": "실내 공간",
+    "cargo space": "적재공간", "荷室": "적재공간", "comfort": "승차감",
+    "乗り心地": "승차감", "purchase intent": "구매 의향", "購入意向": "구매 의향",
 }
 
 
 def normalize_topic(value: str) -> str:
     cleaned = " ".join(value.split()).strip()
-    return TOPIC_ALIASES.get(cleaned, cleaned)
+    return TOPIC_ALIASES.get(cleaned, TOPIC_ALIASES.get(cleaned.casefold(), cleaned))
 
 
 @dataclass(frozen=True)
