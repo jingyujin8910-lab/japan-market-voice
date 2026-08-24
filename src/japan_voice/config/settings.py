@@ -61,7 +61,7 @@ class Settings:
     youtube_max_search_windows: int = 36
     youtube_comment_safety_limit: int = 1000
     youtube_comment_max_pages: int = 20
-    youtube_analyzer_comment_limit: int = 100
+    youtube_analyzer_comment_limit: int = 1000
     youtube_analyzer_max_pages: int = 100
     x_max_posts: int = 100
     gemini_batch_size: int = 30
@@ -149,7 +149,7 @@ def load_settings(*, load_dotenv_file: bool = True) -> Settings:
         youtube_max_search_windows=_integer("YOUTUBE_MAX_SEARCH_WINDOWS", 36),
         youtube_comment_safety_limit=_integer("YOUTUBE_COMMENT_SAFETY_LIMIT", 1000),
         youtube_comment_max_pages=_integer("YOUTUBE_COMMENT_MAX_PAGES", 20),
-        youtube_analyzer_comment_limit=_integer("YOUTUBE_ANALYZER_COMMENT_LIMIT", 100),
+        youtube_analyzer_comment_limit=_integer("YOUTUBE_ANALYZER_COMMENT_LIMIT", 1000),
         youtube_analyzer_max_pages=_integer("YOUTUBE_ANALYZER_MAX_PAGES", 100),
         x_max_posts=_integer("X_MAX_POSTS", 100),
         gemini_batch_size=_integer("GEMINI_BATCH_SIZE", 30),

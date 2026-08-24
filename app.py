@@ -37,7 +37,7 @@ st.set_page_config(page_title="KIA Japan Market Dashboard", page_icon="📊", la
 st.markdown(CSS, unsafe_allow_html=True)
 SETTINGS = load_settings(load_dotenv_file=True)
 ANALYSIS_RESULT_VERSION = 5
-VIDEO_ANALYZER_RESULT_VERSION = 4
+VIDEO_ANALYZER_RESULT_VERSION = 5
 
 # Streamlit preserves session_state across source hot-reloads. Do not keep an
 # unavailable aggregate produced by an older response contract.

@@ -85,3 +85,7 @@ def test_direct_analyzer_collects_all_paginated_replies():
     assert metadata["replies_collected"] == 3
     assert sum(r.raw_metadata.get("is_reply",False) for r in run.consumer_voice_records) == 3
     assert all(r.raw_metadata.get("translation_required") for r in run.consumer_voice_records)
+
+
+def test_direct_analyzer_default_limit_allows_one_thousand_comments():
+    assert Settings().youtube_analyzer_comment_limit == 1000
