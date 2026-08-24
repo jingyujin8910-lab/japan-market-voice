@@ -34,12 +34,15 @@ def extract_youtube_video_id(value: str) -> str:
         raise ValueError("올바른 YouTube URL을 입력해주세요.") from error
     host = (parsed.hostname or "").lower()
     candidate = ""
-    if host in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+    if host in {
+        "youtube.com", "www.youtube.com", "m.youtube.com",
+        "music.youtube.com", "youtube-nocookie.com", "www.youtube-nocookie.com",
+    }:
         if parsed.path == "/watch":
             candidate = parse_qs(parsed.query).get("v", [""])[0]
         else:
             parts = [part for part in parsed.path.split("/") if part]
-            if len(parts) == 2 and parts[0] in {"shorts", "embed"}:
+            if len(parts) == 2 and parts[0] in {"shorts", "embed", "live"}:
                 candidate = parts[1]
     elif host == "youtu.be":
         candidate = parsed.path.strip("/").split("/")[0]

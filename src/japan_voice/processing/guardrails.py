@@ -90,8 +90,11 @@ def classify_entity(text: str, keyword: str) -> EntityMatch:
     )
     if models or (brands and automotive):
         return EntityMatch.TARGET
+    # The keyword is the user-selected entity. Keep KIA strict because that
+    # short token can occur inside unrelated names, but do not require brands
+    # such as BYD (or future models) to exist in a hard-coded alias table.
     if keyword_present and normalized_keyword not in BRAND_ALIASES:
-        return EntityMatch.TARGET if automotive else EntityMatch.UNCERTAIN
+        return EntityMatch.TARGET
     if brands or keyword_present:
         return EntityMatch.UNCERTAIN
     return EntityMatch.UNRELATED

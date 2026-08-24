@@ -36,8 +36,8 @@ from japan_voice.ui.views import render_minkara, render_overview, render_raw, re
 st.set_page_config(page_title="KIA Japan Market Dashboard", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(CSS, unsafe_allow_html=True)
 SETTINGS = load_settings(load_dotenv_file=True)
-ANALYSIS_RESULT_VERSION = 4
-VIDEO_ANALYZER_RESULT_VERSION = 3
+ANALYSIS_RESULT_VERSION = 5
+VIDEO_ANALYZER_RESULT_VERSION = 4
 
 # Streamlit preserves session_state across source hot-reloads. Do not keep an
 # unavailable aggregate produced by an older response contract.
@@ -149,13 +149,22 @@ if submitted:
                 st.write("Analyzing consumer voice and generating insights...")
                 source_map = {"YouTube": Source.YOUTUBE.value, "Yahoo Japan": Source.YAHOO_JAPAN.value, "みんカラ": Source.MINKARA.value}
                 source_values = tuple(source_map[label] for label in selected_labels)
-                run, analysis = execute_run(keyword, start, end, SETTINGS.youtube_max_videos, source_values)
+                # Bound interactive runs even when a deployment still carries
+                # yesterday's overly large YOUTUBE_MAX_VIDEOS setting.
+                run, analysis = execute_run(keyword, start, end, min(SETTINGS.youtube_max_videos, 20), source_values)
                 st.session_state.last_successful_run = run
                 st.session_state.analysis_result = analysis
                 st.session_state.analysis_result_version = ANALYSIS_RESULT_VERSION
                 status.update(label="Dashboard가 준비되었습니다.", state="complete", expanded=False)
-        except Exception:
-            st.error("분석 실행에 실패했습니다. Secret 설정과 외부 서비스 상태를 확인해주세요. 이전 결과는 유지됩니다.")
+        except Exception as error:
+            # Never expose credentials, response bodies, or a traceback.  A
+            # stable error category is enough to distinguish quota, timeout,
+            # authentication, and structured-output failures in production.
+            safe_type = getattr(error, "error_type", "unknown_error")
+            st.error(
+                "분석 실행에 실패했습니다. "
+                f"오류 유형: {safe_type}. 이전 결과는 유지됩니다."
+            )
 
 run = st.session_state.get("last_successful_run")
 analysis = st.session_state.get("analysis_result")

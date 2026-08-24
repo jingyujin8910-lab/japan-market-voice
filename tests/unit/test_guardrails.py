@@ -89,6 +89,10 @@ def test_kia_entity_disambiguation_uses_token_and_automotive_context() -> None:
     assert classify_entity("KIA announces an update", "KIA") is EntityMatch.UNCERTAIN
 
 
+def test_user_selected_brand_does_not_require_a_hardcoded_alias() -> None:
+    assert classify_entity("BYD、日本市場で新型EVを発売", "BYD") is EntityMatch.TARGET
+
+
 @pytest.mark.parametrize("text", ["PV5", "キア PV5", "PV5 Cargo"])
 def test_pv5_is_a_deterministic_kia_vehicle_entity(text: str) -> None:
     assert classify_entity(text, "PV5") is EntityMatch.TARGET

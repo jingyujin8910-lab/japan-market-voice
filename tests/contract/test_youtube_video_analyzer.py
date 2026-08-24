@@ -40,6 +40,8 @@ def test_extract_supported_youtube_urls_and_reject_non_youtube():
     assert extract_youtube_video_id(f"https://www.youtube.com/watch?v={VIDEO_ID}") == VIDEO_ID
     assert extract_youtube_video_id(f"https://youtu.be/{VIDEO_ID}") == VIDEO_ID
     assert extract_youtube_video_id(f"https://youtube.com/shorts/{VIDEO_ID}") == VIDEO_ID
+    assert extract_youtube_video_id(f"https://youtube.com/live/{VIDEO_ID}?si=share") == VIDEO_ID
+    assert extract_youtube_video_id(f"https://www.youtube-nocookie.com/embed/{VIDEO_ID}") == VIDEO_ID
     try:
         extract_youtube_video_id(f"https://example.com/watch?v={VIDEO_ID}")
     except ValueError:
