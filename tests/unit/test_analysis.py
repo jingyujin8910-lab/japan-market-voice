@@ -155,7 +155,7 @@ def test_batching_respects_record_and_character_limits() -> None:
         split_record_batches(records, max_records=0, max_chars=100)
 
 
-def test_failed_large_batch_is_split_and_single_record_failures_become_unknown() -> None:
+def test_failed_large_batch_is_split_and_single_record_failures_get_fallback_analysis() -> None:
     class SizeSensitiveClient:
         def analyze_records(self, records):
             if len(records) > 1:
@@ -176,7 +176,15 @@ def test_failed_large_batch_is_split_and_single_record_failures_become_unknown()
     assert {item.record_id for item in result.record_analyses} == {
         "video", "positive", "negative"
     }
-    assert all(item.sentiment is Sentiment.UNKNOWN for item in result.record_analyses)
+    by_id = {item.record_id: item for item in result.record_analyses}
+    assert by_id["video"].sentiment is Sentiment.UNKNOWN
+    assert by_id["positive"].sentiment is Sentiment.POSITIVE
+    assert by_id["negative"].sentiment is Sentiment.NEGATIVE
+    assert result.sentiment.positive == 1 and result.sentiment.negative == 1
+    assert result.aggregate_available is True
+    assert result.aggregate.positive_drivers
+    assert result.aggregate.negative_drivers
+    assert result.aggregate.marketing_insights
 
 
 def test_mock_structured_analysis_covers_required_outputs() -> None:
@@ -210,7 +218,7 @@ def test_mock_structured_analysis_covers_required_outputs() -> None:
     assert client.synthesize_calls == 1
 
 
-def test_market_content_sentiment_cannot_pollute_consumer_summary() -> None:
+def test_market_content_sentiment_is_sanitized_and_cannot_pollute_consumer_summary() -> None:
     outputs = batch_outputs()
     outputs[0]["analyses"][0] = {
         "record_id": "video",
@@ -219,8 +227,11 @@ def test_market_content_sentiment_cannot_pollute_consumer_summary() -> None:
         "topics": ["일본 출시"],
     }
     client = MockGeminiClient(batch_outputs=outputs, aggregate_output=aggregate_payload())
-    with pytest.raises(AnalysisValidationError, match="market content sentiment"):
-        StructuredAnalysisService(client, batch_size=2).analyze(analyzed_run())
+    result = StructuredAnalysisService(client, batch_size=2).analyze(analyzed_run())
+    video = next(item for item in result.record_analyses if item.record_id == "video")
+    assert video.sentiment is Sentiment.UNKNOWN
+    assert video.sentiment_score is None
+    assert result.sentiment.positive == 1
 
 
 def test_unknown_or_missing_record_analysis_ids_are_rejected() -> None:

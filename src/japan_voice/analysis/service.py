@@ -33,6 +33,32 @@ class StructuredAnalysisService:
         "購入": "구매", "充電": "충전", "走行距離": "주행거리", "サイズ": "크기",
         "室内空間": "실내 공간", "乗り心地": "승차감", "品質": "품질",
     }
+    _POSITIVE_SIGNALS = (
+        "良い", "いい", "好き", "欲しい", "最高", "素晴らしい", "期待",
+        "便利", "かっこいい", "楽しみ", "買いたい", "気に入", "魅力",
+        "good", "great", "love", "want", "excellent", "nice", "best",
+        "좋", "최고", "마음에", "사고 싶", "기대", "멋지", "편리",
+    )
+    _NEGATIVE_SIGNALS = (
+        "悪い", "高い", "不安", "問題", "残念", "いらない", "無理",
+        "心配", "狭い", "遅い", "足りない", "難しい", "嫌い", "微妙",
+        "bad", "expensive", "problem", "worry", "disappoint", "poor", "hate",
+        "비싸", "문제", "걱정", "불안", "아쉽", "별로", "싫", "부족",
+    )
+    _TOPIC_SIGNALS = (
+        (("価格", "値段", "price", "비싸", "가격"), "가격"),
+        (("充電", "charger", "charging", "충전"), "충전 인프라"),
+        (("航続", "走行距離", "range", "주행거리"), "주행거리"),
+        (("デザイン", "design", "디자인", "かっこいい"), "디자인"),
+        (("サイズ", "大きい", "小さい", "크기", "size"), "차량 크기"),
+        (("室内", "車内", "공간", "space"), "실내 공간"),
+        (("荷室", "積載", "cargo", "적재"), "적재공간"),
+        (("発売", "販売", "launch", "출시"), "일본 출시"),
+        (("ディーラー", "販売店", "dealer", "딜러"), "판매·딜러"),
+        (("バッテリー", "battery", "배터리"), "배터리"),
+        (("安全", "safety", "안전"), "안전성"),
+        (("品質", "quality", "품질"), "품질"),
+    )
     def __init__(
         self,
         client: GeminiAnalysisClient,
@@ -114,7 +140,7 @@ class StructuredAnalysisService:
             output = self._client.analyze_records(records)
         except Exception:
             if len(records) == 1:
-                return [RecordAnalysis(record_id=records[0].id)]
+                return [self._fallback_record_analysis(records[0])]
             middle = len(records) // 2
             return (
                 self._analyze_resilient(records[:middle])
@@ -126,7 +152,66 @@ class StructuredAnalysisService:
             raise AnalysisValidationError(
                 "record analysis IDs do not match requested batch"
             )
-        return list(output.analyses)
+        output_by_id = {item.record_id: item for item in output.analyses}
+        return [
+            self._usable_record_analysis(output_by_id[record.id], record)
+            for record in records
+        ]
+
+    @classmethod
+    def _usable_record_analysis(
+        cls, analysis: RecordAnalysis, record: ContentRecord
+    ) -> RecordAnalysis:
+        if record.content_group is ContentGroup.MARKET_CONTENT:
+            if analysis.sentiment is Sentiment.UNKNOWN and analysis.sentiment_score is None:
+                return analysis
+            return RecordAnalysis(record_id=record.id, topics=analysis.topics)
+        if analysis.sentiment is Sentiment.UNKNOWN:
+            fallback = cls._fallback_record_analysis(record)
+            # Retain a valid Gemini translation even when its sentiment was unknown.
+            if analysis.translated_ko.strip():
+                fallback = fallback.model_copy(
+                    update={"translated_ko": analysis.translated_ko}
+                )
+            return fallback
+        return analysis
+
+    @classmethod
+    def _fallback_record_analysis(cls, record: ContentRecord) -> RecordAnalysis:
+        """Deterministic minimum analysis when Gemini cannot analyze one record."""
+        if record.content_group is not ContentGroup.CONSUMER_VOICE:
+            return RecordAnalysis(record_id=record.id)
+        text = f"{record.title or ''} {record.content}".casefold()
+        positive = sum(signal.casefold() in text for signal in cls._POSITIVE_SIGNALS)
+        negative = sum(signal.casefold() in text for signal in cls._NEGATIVE_SIGNALS)
+        if positive > negative:
+            sentiment, score = Sentiment.POSITIVE, min(1.0, 0.35 + positive * 0.15)
+        elif negative > positive:
+            sentiment, score = Sentiment.NEGATIVE, max(-1.0, -0.35 - negative * 0.15)
+        else:
+            sentiment, score = Sentiment.NEUTRAL, 0.0
+        topics = [
+            label for signals, label in cls._TOPIC_SIGNALS
+            if any(signal.casefold() in text for signal in signals)
+        ][:10] or ["기타 소비자 반응"]
+        question = "제품 관련 문의" if "?" in text or "？" in text else None
+        wants_purchase = any(
+            signal.casefold() in text
+            for signal in ("欲しい", "買いたい", "購入", "want", "buy", "사고 싶", "구매")
+        )
+        return RecordAnalysis(
+            record_id=record.id,
+            sentiment=sentiment,
+            sentiment_score=score,
+            topics=topics,
+            positive_drivers=topics[:3] if sentiment is Sentiment.POSITIVE else [],
+            negative_drivers=topics[:3] if sentiment is Sentiment.NEGATIVE else [],
+            customer_questions=[question] if question else [],
+            purchase_signals=["구매 관심"] if wants_purchase and sentiment is not Sentiment.NEGATIVE else [],
+            purchase_barriers=topics[:3] if sentiment is Sentiment.NEGATIVE else [],
+            # Keep the original visible instead of presenting an invented translation.
+            translated_ko=record.content[:2000],
+        )
 
     @staticmethod
     def _finding_concept(text: str) -> str:
