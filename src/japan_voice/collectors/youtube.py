@@ -32,6 +32,13 @@ from .base import CollectorResult
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 
 
+def _integer(value: Any) -> Optional[int]:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _parse_datetime(value: Any) -> datetime:
     if not isinstance(value, str):
         raise ExternalServiceError(ErrorType.MALFORMED_RESPONSE, "YouTube timestamp is missing")
@@ -123,6 +130,9 @@ class YouTubeCollector:
                     api_calls += comment_calls
                     comment_api_calls += comment_calls
                     records.extend(comments)
+                    comment_error = comment_audit.pop("_error", None)
+                    if isinstance(comment_error, ExternalServiceError):
+                        errors.append(comment_error)
                     video_audit[video.id].update(comment_audit)
                 except ExternalServiceError as error:
                     api_calls += 1
@@ -354,6 +364,7 @@ class YouTubeCollector:
         calls = 0
         page_token: Optional[str] = None
         stop_reason = "unknown"
+        collection_error: Optional[ExternalServiceError] = None
         while calls < self._settings.youtube_comment_max_pages:
             remaining = self._settings.youtube_comment_safety_limit - len(records)
             if remaining <= 0:
@@ -365,9 +376,20 @@ class YouTubeCollector:
             }
             if page_token:
                 params["pageToken"] = page_token
-            payload = self._http.get_json(f"{YOUTUBE_API_BASE}/commentThreads", params=params)
-            calls += 1
-            page_items = _items(payload, "comments")
+            try:
+                payload = self._http.get_json(f"{YOUTUBE_API_BASE}/commentThreads", params=params)
+                calls += 1
+                page_items = _items(payload, "comments")
+            except ExternalServiceError as error:
+                calls += 1
+                stop_reason = (
+                    "comments_disabled"
+                    if error.details.get("reason") == "commentsDisabled"
+                    else "collection_error"
+                )
+                if stop_reason == "collection_error":
+                    collection_error = error
+                break
             for item in page_items:
                 comment_id = item.get("id")
                 top = item.get("snippet", {}).get("topLevelComment", {})
@@ -375,21 +397,24 @@ class YouTubeCollector:
                 native_comment_id = top.get("id") if isinstance(top, dict) else None
                 comment_id = native_comment_id or comment_id
                 if not isinstance(comment_id, str) or not isinstance(snippet, dict):
-                    raise ExternalServiceError(ErrorType.MALFORMED_RESPONSE, "YouTube comment item is malformed")
+                    continue
                 text = snippet.get("textDisplay") or snippet.get("textOriginal")
                 if not isinstance(text, str) or not text.strip():
                     continue
-                record = ContentRecord(
-                    id=f"youtube:comment:{comment_id}", source=self.source, provider="YouTube",
-                    native_id=comment_id, parent_id=parent.id, content_type=ContentType.COMMENT,
-                    content_group=ContentGroup.CONSUMER_VOICE, keyword=request.keyword,
-                    title=parent.title, content=text,
-                    author=str(snippet.get("authorDisplayName")) if snippet.get("authorDisplayName") else None,
-                    published_at=_parse_datetime(snippet.get("publishedAt")),
-                    url=f"https://www.youtube.com/watch?v={video_id}&lc={comment_id}",
-                    parent_url=parent.url, engagement_count=int(snippet.get("likeCount", 0)),
-                    is_comment=True,
-                )
+                try:
+                    record = ContentRecord(
+                        id=f"youtube:comment:{comment_id}", source=self.source, provider="YouTube",
+                        native_id=comment_id, parent_id=parent.id, content_type=ContentType.COMMENT,
+                        content_group=ContentGroup.CONSUMER_VOICE, keyword=request.keyword,
+                        title=parent.title, content=text,
+                        author=str(snippet.get("authorDisplayName")) if snippet.get("authorDisplayName") else None,
+                        published_at=_parse_datetime(snippet.get("publishedAt")),
+                        url=f"https://www.youtube.com/watch?v={video_id}&lc={comment_id}",
+                        parent_url=parent.url, engagement_count=_integer(snippet.get("likeCount")) or 0,
+                        is_comment=True,
+                    )
+                except (ExternalServiceError, TypeError, ValueError, ValidationError):
+                    continue
                 records.append(evaluate_record(record, start_date=request.start_date,
                     end_date=request.end_date, parent=parent).record)
                 if len(records) >= self._settings.youtube_comment_safety_limit:
@@ -400,7 +425,10 @@ class YouTubeCollector:
                 break
         else:
             stop_reason = "technical_safety_limit"
-        return records, calls, {
+        audit: Dict[str, Any] = {
             "raw_comments_collected": len(records),
             "collection_stop_reason": stop_reason,
         }
+        if collection_error is not None:
+            audit["_error"] = collection_error
+        return records, calls, audit

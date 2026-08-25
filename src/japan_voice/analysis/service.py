@@ -58,12 +58,7 @@ class StructuredAnalysisService:
             max_records=self._batch_size,
             max_chars=self._batch_max_chars,
         ):
-            output = self._client.analyze_records(batch)
-            expected = {record.id for record in batch}
-            actual = {item.record_id for item in output.analyses}
-            if actual != expected:
-                raise AnalysisValidationError("record analysis IDs do not match requested batch")
-            analyses.extend(output.analyses)
+            analyses.extend(self._analyze_resilient(batch))
 
         self._validate_record_analyses(analyses, by_id)
         sentiment = self._consumer_sentiment(analyses, by_id)
@@ -102,6 +97,36 @@ class StructuredAnalysisService:
             analyzed_records=len(analyses),
             eligible_records=len(records),
         )
+
+    def _analyze_resilient(
+        self, records: Sequence[ContentRecord]
+    ) -> List[RecordAnalysis]:
+        """Keep successful work when one Gemini batch is too large or malformed.
+
+        A failed batch is bisected so a single problematic/oversized record does
+        not discard every other result.  At the singleton boundary we return an
+        explicit UNKNOWN analysis; downstream summaries already exclude unknown
+        sentiment, while the raw record remains visible to the user.
+        """
+        if not records:
+            return []
+        try:
+            output = self._client.analyze_records(records)
+        except Exception:
+            if len(records) == 1:
+                return [RecordAnalysis(record_id=records[0].id)]
+            middle = len(records) // 2
+            return (
+                self._analyze_resilient(records[:middle])
+                + self._analyze_resilient(records[middle:])
+            )
+        expected = {record.id for record in records}
+        actual = {item.record_id for item in output.analyses}
+        if actual != expected:
+            raise AnalysisValidationError(
+                "record analysis IDs do not match requested batch"
+            )
+        return list(output.analyses)
 
     @staticmethod
     def _finding_concept(text: str) -> str:

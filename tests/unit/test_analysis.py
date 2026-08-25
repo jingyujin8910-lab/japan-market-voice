@@ -6,7 +6,10 @@ from pydantic import ValidationError
 from japan_voice.analysis.batching import split_record_batches
 from japan_voice.analysis.client import MockGeminiClient
 from japan_voice.analysis.evidence import AnalysisValidationError
-from japan_voice.analysis.schemas import AggregateAnalysis, AggregateStatus, EvidenceFinding, RecordAnalysis
+from japan_voice.analysis.schemas import (
+    AggregateAnalysis, AggregateStatus, EvidenceFinding, RecordAnalysis,
+    RecordAnalysisBatch,
+)
 from japan_voice.analysis.service import StructuredAnalysisService
 from japan_voice.application.collection_service import CollectionRunResult
 from japan_voice.application.pipeline import ProcessingPipeline
@@ -150,6 +153,30 @@ def test_batching_respects_record_and_character_limits() -> None:
     assert len(char_batches) >= 2
     with pytest.raises(ValueError):
         split_record_batches(records, max_records=0, max_chars=100)
+
+
+def test_failed_large_batch_is_split_and_single_record_failures_become_unknown() -> None:
+    class SizeSensitiveClient:
+        def analyze_records(self, records):
+            if len(records) > 1:
+                raise RuntimeError("provider rejected oversized batch")
+            record = records[0]
+            if record.id == "negative":
+                raise RuntimeError("one malformed record")
+            return RecordAnalysisBatch(analyses=[RecordAnalysis(record_id=record.id)])
+
+        def synthesize(self, records, analyses):
+            return AggregateAnalysis()
+
+    result = StructuredAnalysisService(
+        SizeSensitiveClient(), batch_size=30
+    ).analyze(analyzed_run())
+
+    assert result.analyzed_records == result.eligible_records == 3
+    assert {item.record_id for item in result.record_analyses} == {
+        "video", "positive", "negative"
+    }
+    assert all(item.sentiment is Sentiment.UNKNOWN for item in result.record_analyses)
 
 
 def test_mock_structured_analysis_covers_required_outputs() -> None:

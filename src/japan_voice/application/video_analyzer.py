@@ -161,26 +161,45 @@ class YouTubeVideoAnalyzerCollector:
             params: Dict[str, Any] = {"key": self._api_key, "part": "snippet", "videoId": parent.native_id,
                 "order": "time", "textFormat": "plainText", "maxResults": min(100, remaining)}
             if token: params["pageToken"] = token
-            payload = self._http.get_json(f"{YOUTUBE_API_BASE}/commentThreads", params=params)
-            calls += 1
-            page = _items(payload, "comments")
+            try:
+                payload = self._http.get_json(f"{YOUTUBE_API_BASE}/commentThreads", params=params)
+                calls += 1
+                page = _items(payload, "comments")
+            except ExternalServiceError as error:
+                calls += 1
+                stop_reason = (
+                    "comments_disabled"
+                    if error.details.get("reason") == "commentsDisabled"
+                    else "collection_error"
+                )
+                break
             for thread in page:
-                top = thread.get("snippet", {}).get("topLevelComment", {})
-                snippet = top.get("snippet") if isinstance(top, dict) else None
-                comment_id = top.get("id") if isinstance(top, dict) else None
-                if not isinstance(comment_id, str) or not isinstance(snippet, dict):
-                    raise ExternalServiceError(ErrorType.MALFORMED_RESPONSE, "YouTube comment item is malformed")
-                text = snippet.get("textOriginal") or snippet.get("textDisplay")
-                if not isinstance(text, str) or not text.strip(): continue
-                records.append(self._comment_record(parent, comment_id, snippet, is_reply=False))
+                try:
+                    top = thread.get("snippet", {}).get("topLevelComment", {})
+                    snippet = top.get("snippet") if isinstance(top, dict) else None
+                    comment_id = top.get("id") if isinstance(top, dict) else None
+                    if not isinstance(comment_id, str) or not isinstance(snippet, dict):
+                        continue
+                    text = snippet.get("textOriginal") or snippet.get("textDisplay")
+                    if not isinstance(text, str) or not text.strip():
+                        continue
+                    records.append(self._comment_record(parent, comment_id, snippet, is_reply=False))
+                except (ExternalServiceError, TypeError, ValueError):
+                    # One deleted or malformed comment must not invalidate the page.
+                    continue
                 top_level_count += 1
                 total_replies = _integer(thread.get("snippet", {}).get("totalReplyCount")) or 0
                 if total_replies and len(records) < self._settings.youtube_analyzer_comment_limit:
-                    replies, reply_calls, reply_complete = self._replies(
-                        parent, comment_id,
-                        self._settings.youtube_analyzer_comment_limit - len(records),
-                        self._settings.youtube_analyzer_max_pages - calls,
-                    )
+                    try:
+                        replies, reply_calls, reply_complete = self._replies(
+                            parent, comment_id,
+                            self._settings.youtube_analyzer_comment_limit - len(records),
+                            self._settings.youtube_analyzer_max_pages - calls,
+                        )
+                    except ExternalServiceError:
+                        # Replies are optional. Preserve the parent and continue
+                        # with the next top-level comment when their endpoint fails.
+                        continue
                     records.extend(replies)
                     reply_count += len(replies)
                     calls += reply_calls
@@ -210,11 +229,14 @@ class YouTubeVideoAnalyzerCollector:
             for item in _items(payload, "replies"):
                 comment_id, snippet = item.get("id"), item.get("snippet")
                 if not isinstance(comment_id, str) or not isinstance(snippet, dict):
-                    raise ExternalServiceError(ErrorType.MALFORMED_RESPONSE, "YouTube reply item is malformed")
+                    continue
                 text = snippet.get("textOriginal") or snippet.get("textDisplay")
                 if isinstance(text, str) and text.strip():
-                    records.append(self._comment_record(parent, comment_id, snippet, is_reply=True,
-                        top_comment_id=top_comment_id))
+                    try:
+                        records.append(self._comment_record(parent, comment_id, snippet, is_reply=True,
+                            top_comment_id=top_comment_id))
+                    except (ExternalServiceError, TypeError, ValueError):
+                        continue
                 if len(records) >= remaining: break
             token = payload.get("nextPageToken")
             if not token:

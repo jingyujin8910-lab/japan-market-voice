@@ -36,8 +36,8 @@ from japan_voice.ui.views import render_minkara, render_overview, render_raw, re
 st.set_page_config(page_title="KIA Japan Market Dashboard", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(CSS, unsafe_allow_html=True)
 SETTINGS = load_settings(load_dotenv_file=True)
-ANALYSIS_RESULT_VERSION = 5
-VIDEO_ANALYZER_RESULT_VERSION = 5
+ANALYSIS_RESULT_VERSION = 6
+VIDEO_ANALYZER_RESULT_VERSION = 6
 
 # Streamlit preserves session_state across source hot-reloads. Do not keep an
 # unavailable aggregate produced by an older response contract.
@@ -79,9 +79,17 @@ def execute_run(keyword: str, start_date: date, end_date: date, max_results: int
     run = collect_and_process(keyword, start_date, end_date, max_results, source_values)
     if not run.eligible_records or not get_secret("GEMINI_API_KEY"):
         return run, None
-    gemini = GoogleGeminiClient.from_settings(SETTINGS, api_key=get_secret("GEMINI_API_KEY"))
     try:
-        analysis = StructuredAnalysisService(gemini, batch_size=SETTINGS.gemini_batch_size).analyze(run)
+        gemini = GoogleGeminiClient.from_settings(SETTINGS, api_key=get_secret("GEMINI_API_KEY"))
+    except Exception:
+        return run, None
+    try:
+        try:
+            analysis = StructuredAnalysisService(gemini, batch_size=SETTINGS.gemini_batch_size).analyze(run)
+        except Exception:
+            # Collection is still a useful result. A provider/schema failure
+            # must not turn a completed keyword search into a failed run.
+            analysis = None
         return run, analysis
     finally:
         if gemini is not None:
@@ -99,11 +107,18 @@ def execute_video_analyzer(video_id: str, result_version: int) -> Tuple[RunResul
         http.close()
     if not run.consumer_voice_records or not get_secret("GEMINI_API_KEY"):
         return run, None
-    gemini = GoogleGeminiClient.from_settings(SETTINGS, api_key=get_secret("GEMINI_API_KEY"))
     try:
-        return run, StructuredAnalysisService(
-            gemini, batch_size=SETTINGS.gemini_batch_size
-        ).analyze(run)
+        gemini = GoogleGeminiClient.from_settings(SETTINGS, api_key=get_secret("GEMINI_API_KEY"))
+    except Exception:
+        return run, None
+    try:
+        try:
+            analysis = StructuredAnalysisService(
+                gemini, batch_size=SETTINGS.gemini_batch_size
+            ).analyze(run)
+        except Exception:
+            analysis = None
+        return run, analysis
     finally:
         gemini.close()
 

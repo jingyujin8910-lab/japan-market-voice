@@ -89,3 +89,21 @@ def test_direct_analyzer_collects_all_paginated_replies():
 
 def test_direct_analyzer_default_limit_allows_one_thousand_comments():
     assert Settings().youtube_analyzer_comment_limit == 1000
+
+
+def test_direct_analyzer_skips_malformed_comment_and_keeps_valid_comments():
+    class MalformedHttp:
+        def get_json(self, url, *, params=None, headers=None):
+            if url.endswith("/videos"):
+                return video_payload()
+            return {"items": [
+                {"snippet": {"topLevelComment": {"snippet": {"textOriginal": "broken"}}}},
+                comment("valid", "정상 댓글"),
+            ]}
+
+    run = YouTubeVideoAnalyzerCollector(
+        http=MalformedHttp(), settings=Settings(), api_key="key"
+    ).collect(VIDEO_ID)
+
+    assert [record.native_id for record in run.consumer_voice_records] == ["valid"]
+    assert run.collector_results[0].status is CollectorStatus.SUCCESS
