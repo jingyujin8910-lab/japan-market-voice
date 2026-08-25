@@ -36,8 +36,8 @@ from japan_voice.ui.views import render_minkara, render_overview, render_raw, re
 st.set_page_config(page_title="KIA Japan Market Dashboard", page_icon="📊", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(CSS, unsafe_allow_html=True)
 SETTINGS = load_settings(load_dotenv_file=True)
-ANALYSIS_RESULT_VERSION = 6
-VIDEO_ANALYZER_RESULT_VERSION = 6
+ANALYSIS_RESULT_VERSION = 7
+VIDEO_ANALYZER_RESULT_VERSION = 7
 
 # Streamlit preserves session_state across source hot-reloads. Do not keep an
 # unavailable aggregate produced by an older response contract.
